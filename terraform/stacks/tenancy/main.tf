@@ -1,0 +1,2 @@
+module "network" { source = "../../modules/network"; providers = { oci = oci.target }; compartment_ocid = var.compartment_ocid; name = var.tenancy.profile; cidr = var.tenancy.network.cidr; public_access = var.tenancy.public_access }
+module "compute" { source = "../../modules/compute"; providers = { oci = oci.target }; compartment_ocid = var.compartment_ocid; subnet_id = module.network.private_subnet_id; vms = var.tenancy.vms; ssh_public_key = var.ssh_public_key }

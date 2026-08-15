@@ -1,0 +1,8 @@
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:latest
+    restart: unless-stopped
+    ports: ["3000:3000","2222:22"]
+    volumes: [forgejo:/data]
+    healthcheck: {test: ["CMD-SHELL","wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"], interval: 30s, timeout: 5s, retries: 5}
+volumes: {forgejo: {}}

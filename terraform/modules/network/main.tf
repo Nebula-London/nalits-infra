@@ -1,0 +1,4 @@
+resource "oci_core_vcn" "this" { compartment_id = var.compartment_ocid; cidr_blocks = [var.cidr]; display_name = "${var.name}-vcn"; dns_label = replace(var.name,"-","") }
+resource "oci_core_subnet" "private" { compartment_id = var.compartment_ocid; vcn_id = oci_core_vcn.this.id; cidr_block = cidrsubnet(var.cidr,4,0); display_name = "${var.name}-private"; prohibit_public_ip_on_vnic = true; route_table_id = oci_core_route_table.private.id }
+resource "oci_core_route_table" "private" { compartment_id = var.compartment_ocid; vcn_id = oci_core_vcn.this.id; display_name = "${var.name}-private-rt" }
+resource "oci_core_default_security_list" "deny" { manage_default_resource_id = oci_core_vcn.this.default_security_list_id; egress_security_rules { protocol="all"; destination="0.0.0.0/0"; destination_type="CIDR_BLOCK" } }

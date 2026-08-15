@@ -1,0 +1,7 @@
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    restart: unless-stopped
+    cap_add: [NET_ADMIN, SYS_MODULE]
+    volumes: [./config:/config]
+    ports: ["51820:51820/udp"]

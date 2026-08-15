@@ -1,0 +1,13 @@
+version: 1
+network:
+  pool: 10.64.0.0/12
+  tenancy_prefix: 20
+  private_subnet_prefix: 24
+  reserved: [10.64.240.0/20]
+security:
+  private_environments_require_vpn: true
+  deny_cross_environment_by_default: true
+  public_profiles: [public]
+state:
+  backend: oci
+  bucket_prefix: nalits-tfstate
