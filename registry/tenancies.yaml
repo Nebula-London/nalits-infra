@@ -1,0 +1,73 @@
+version: 1
+tenancies:
+  security:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_SECURITY
+    profile: security
+    environment: security
+    region: uk-london-1
+    capabilities: [vpn, identity, ssh_ca]
+    public_access: false
+    security_level: critical
+    access_groups: [security-admins]
+    network: {cidr: 10.64.0.0/20}
+    vms:
+      - {name: security-01, role: security, shape: VM.Standard.E2.1.Micro, subnet: private}
+  public:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_PUBLIC
+    profile: public
+    environment: public
+    region: uk-london-1
+    capabilities: [public_ingress, reverse_proxy, applications]
+    public_access: true
+    security_level: high
+    access_groups: [platform-engineers]
+    network: {cidr: 10.64.16.0/20}
+    vms:
+      - {name: edge-01, role: public-edge, shape: VM.Standard.E2.1.Micro, subnet: public}
+  development:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_DEV
+    profile: environment
+    environment: dev
+    region: uk-london-1
+    capabilities: [docker_host, forgejo, ci, monitoring_agent, backup_agent]
+    public_access: false
+    security_level: high
+    access_groups: [dev-users]
+    network: {cidr: 10.64.32.0/20}
+    vms:
+      - {name: dev-01, role: development, shape: VM.Standard.E2.1.Micro, subnet: private}
+  production:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_PROD
+    profile: environment
+    environment: prod
+    region: uk-london-1
+    capabilities: [docker_host, applications, database_client, monitoring_agent, backup_agent]
+    public_access: false
+    security_level: critical
+    access_groups: [prod-admins]
+    network: {cidr: 10.64.48.0/20}
+    vms:
+      - {name: prod-01, role: application, shape: VM.Standard.E2.1.Micro, subnet: private}
+  observability:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_OBS
+    profile: observability
+    environment: observability
+    region: uk-london-1
+    capabilities: [monitoring, logging]
+    public_access: false
+    security_level: high
+    access_groups: [observability-readers, observability-admins]
+    network: {cidr: 10.64.64.0/20}
+    vms:
+      - {name: obs-01, role: observability, shape: VM.Standard.E2.1.Micro, subnet: private}
+  terraform-state:
+    tenancy_id: ocid1.tenancy.oc1..REPLACE_STATE
+    profile: state
+    environment: state
+    region: uk-london-1
+    capabilities: [terraform_state]
+    public_access: false
+    security_level: critical
+    access_groups: [platform-engineers]
+    network: {cidr: 10.64.80.0/20}
+    vms: []

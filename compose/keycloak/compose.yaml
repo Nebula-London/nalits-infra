@@ -1,0 +1,6 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    restart: unless-stopped
+    command: start
+    volumes: [./data:/opt/keycloak/data]

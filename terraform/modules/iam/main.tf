@@ -1,0 +1,1 @@
+resource "oci_identity_dynamic_group" "runtime" { compartment_id = var.compartment_ocid; name = "${var.name}-runtime"; description = "Runtime instances for ${var.name}"; matching_rule = "ALL {instance.compartment.id = '${var.compartment_ocid}'}" }

@@ -1,0 +1,13 @@
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!examples/*.tfvars
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+secrets/
+inventory.generated.yaml
+.DS_Store
