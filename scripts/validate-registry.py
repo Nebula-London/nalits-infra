@@ -5,13 +5,14 @@ def main():
     p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='cmd',required=True)
     v=sub.add_parser('validate'); v.add_argument('--file',required=True); v.add_argument('--platform',required=True)
     c=sub.add_parser('cidr'); c.add_argument('--file',required=True); c.add_argument('--tenancy',required=True)
-    a=p.parse_args(); reg=yaml.safe_load(open(a.file)); plat=yaml.safe_load(open(a.platform))
+    a=p.parse_args(); reg=yaml.safe_load(open(a.file))
     if a.cmd=='cidr': print(reg['tenancies'][a.tenancy]['network']['cidr']); return
+    plat=yaml.safe_load(open(a.platform))
     pool=ipaddress.ip_network(plat['network']['pool']); seen=[]; errors=[]
     names=list(reg.get('tenancies',{}))
     if not names: errors.append('registry contains no tenancies')
     for name,t in reg['tenancies'].items():
-        for key in ('tenancy_id','profile','environment','region','capabilities','network'): 
+        for key in ('tenancy_id','profile','environment','region','capabilities','network'):
             if key not in t: errors.append(f'{name}: missing {key}')
         try: n=ipaddress.ip_network(t['network']['cidr'])
         except ValueError: errors.append(f'{name}: invalid CIDR'); continue
