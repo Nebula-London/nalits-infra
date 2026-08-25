@@ -184,11 +184,55 @@ create_mapper "creation date" "createTimestamp" "createTimestamp" "false" "true"
 # modifyDate: modifyTimestamp -> modifyTimestamp (read-only)
 create_mapper "modify date" "modifyTimestamp" "modifyTimestamp" "false" "true" "true"
 
+# --- Create group LDAP mapper ---
+log "Creating group LDAP mapper..."
+
+GROUP_MAPPER_CONFIG=$(python3 -c "
+import json
+comp = {
+    'name': 'groups',
+    'providerId': 'group-ldap-mapper',
+    'providerType': 'org.keycloak.storage.ldap.mappers.LDAPStorageMapper',
+    'parentId': '${LDAP_ID}',
+    'config': {
+        'groups.dn': ['${LDAP_USERS_DN}'],
+        'group.object.classes': ['group'],
+        'group.name.ldap.attribute': ['cn'],
+        'membership.ldap.attribute': ['member'],
+        'membership.user.ldap.attribute': ['member'],
+        'membership.attribute.type': ['DN'],
+        'mode': ['READ_ONLY'],
+        'preserve.group.inheritance': ['false'],
+        'ignore.missing.groups': ['false'],
+        'drop.non.existing.groups.during.sync': ['false'],
+        'groups.path': ['/'],
+        'memberof.ldap.attribute': ['memberOf'],
+        'user.roles.retrieve.strategy': ['LOAD_GROUPS_BY_MEMBER_ATTRIBUTE']
+    }
+}
+print(json.dumps(comp))
+")
+
+RESULT=$(curl -s -w "\n%{http_code}" -X POST "${KEYCLOAK_URL}/admin/realms/${AD_REALM}/components" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$GROUP_MAPPER_CONFIG" 2>/dev/null)
+
+CODE=$(echo "$RESULT" | tail -1)
+if [[ "$CODE" == "201" ]]; then
+    log "  Mapper 'groups' created (group-ldap-mapper, READ_ONLY)"
+else
+    log "  WARNING: Mapper 'groups' creation returned HTTP ${CODE}"
+    echo "  $(echo "$RESULT" | sed '$d')"
+fi
+
 log ""
 log "LDAP federation setup complete!"
 log "  Federation: ldap (${LDAP_CONN_URL})"
 log "  Bind DN: ${LDAP_BIND_DN}"
 log "  User Base: ${LDAP_USERS_DN}"
-log "  Mappers: username, email, firstName, lastName, creationDate, modifyDate"
+log "  Mappers: username, email, firstName, lastName, creationDate, modifyDate, groups"
 log ""
-log "Next: Sync users from Keycloak admin console -> User Federation -> ldap -> Sync -> Full Sync"
+log "Next: Sync users and groups from Keycloak admin console -> User Federation -> ldap"
+log "  - Full Sync (users)"
+log "  - Sync group registrations (groups)"
