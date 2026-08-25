@@ -1,0 +1,15 @@
+# ===========================================
+# Certbot Auto-Renewal Cron Job
+# Runs daily at 3 AM to check for renewals
+# ===========================================
+
+# Environment variables
+CERTBOT_EMAIL=admin@rentoption.com
+CERTBOT_DOMAINS=sso.rentoption.com
+CERTBOT_STAGING=1
+
+# Daily renewal check at 3:00 AM
+0 3 * * * root /renew.sh >> /var/log/certbot-renewal.log 2>&1
+
+# Weekly full renewal check (force) on Sundays at 4:00 AM
+0 4 * * 0 root /renew.sh --force-renewal >> /var/log/certbot-renewal.log 2>&1

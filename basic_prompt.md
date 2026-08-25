@@ -1,0 +1,3 @@
+I do have current server that will have required port open for samba AD. Not sure if I needed one for keycloak to open. the DNS sso.rentoption.com been setup for this sever ip. create different dir for differnt main service. there will be nginx in front > keycloak > samba. HR will create a user in keycloak that will sync with AD. Once the user authenticate with keycloak, it will have access of different services.
+
+everyhting should be inside docker and docker compsoe will be the one to run the service. we also need UI on top of the samba AD for internal user only, it won't expose to the inetrnet same as samba. later on we can assign domain to it but for now no domain.
