@@ -219,6 +219,17 @@ samba-tool user create keycloak-service "ChangeMe_KeycloakSvc_2024!" \
 samba-tool group addmembers "Service Accounts" keycloak-service \
     -U administrator --password="${SAMBA_ADMIN_PASS}" || true
 
+log "Creating SSSD access groups..."
+samba-tool group add "root-sssd" --group-scope=Global --group-type=Security \
+    -U administrator --password="${SAMBA_ADMIN_PASS}" 2>/dev/null && \
+    log "Created group 'root-sssd' (SSH + sudo)" || \
+    warn "Group 'root-sssd' may already exist"
+
+samba-tool group add "non-root-sssd" --group-scope=Global --group-type=Security \
+    -U administrator --password="${SAMBA_ADMIN_PASS}" 2>/dev/null && \
+    log "Created group 'non-root-sssd' (SSH only)" || \
+    warn "Group 'non-root-sssd' may already exist"
+
 log "Granting LDAP write permissions to keycloak-service..."
 samba-tool dsacl set "CN=Users,DC=${AD_DOMAIN//./,DC=}" \
     --acl="keycloak-service:CR;user" \

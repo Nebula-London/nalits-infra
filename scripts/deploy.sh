@@ -91,28 +91,27 @@ done
 # ===========================================
 if [[ ! -d "nginx/certbot/conf/live/${KEYCLOAK_HOSTNAME}" ]]; then
     log "Generating initial SSL certificates..."
-    
+
     # Start nginx temporarily for ACME challenge
     docker compose up -d nginx
     sleep 5
-    
-    # Get certificates
+
     STAGING_FLAG=""
     if [[ "${CERTBOT_STAGING:-1}" == "1" ]]; then
         STAGING_FLAG="--staging"
         warn "Using Let's Encrypt STAGING environment"
     fi
-    
+
     docker run --rm \
-        -v "${PROJECT_DIR}/nginx/certbot/www:/var/www/certbot" \
-        -v "${PROJECT_DIR}/nginx/certbot/conf:/etc/letsencrypt" \
+        -v "rentoption-nginx-certbot:/var/www/certbot" \
+        -v "rentoption-nginx-certbot-conf:/etc/letsencrypt" \
         certbot/certbot certonly \
         --webroot --webroot-path=/var/www/certbot \
         --email "${CERTBOT_EMAIL}" \
         --agree-tos --no-eff-email --non-interactive \
         ${STAGING_FLAG} \
         -d "${KEYCLOAK_HOSTNAME}"
-    
+
     docker compose stop nginx
     log "Initial certificates obtained"
 fi
@@ -122,7 +121,6 @@ fi
 # ===========================================
 log "Deploying all services..."
 
-# Build and start
 if [[ "${1:-}" == "--build" ]]; then
     log "Building images..."
     docker compose build --no-cache
@@ -140,10 +138,10 @@ check_service() {
     local service=$1
     local max_attempts=30
     local attempt=1
-    
+
     while [[ $attempt -le $max_attempts ]]; do
         local status=$(docker compose ps --format json ${service} 2>/dev/null | jq -r '.[0].Health // "unknown"' 2>/dev/null || echo "unknown")
-        
+
         if [[ "${status}" == "healthy" ]]; then
             log "${service} is healthy"
             return 0
@@ -152,20 +150,19 @@ check_service() {
             docker compose logs ${service} --tail=50
             return 1
         fi
-        
+
         info "Waiting for ${service}... (${attempt}/${max_attempts})"
         sleep 10
         ((attempt++))
     done
-    
+
     error "${service} health check timeout"
     return 1
 }
 
-# Check services in dependency order
 check_service postgres
-check_service keycloak
 check_service samba
+check_service keycloak
 
 # LAM is optional (profile)
 if docker compose --profile internal ps lam &>/dev/null; then
@@ -173,50 +170,61 @@ if docker compose --profile internal ps lam &>/dev/null; then
 fi
 
 # ===========================================
-# Post-deployment
+# Post-deployment: Setup LDAP Federation
 # ===========================================
 log "Running post-deployment tasks..."
 
-# Create test users in Samba AD
-log "Creating test users in Samba AD..."
-docker compose exec -T samba /scripts/create-users.sh 2>/dev/null || warn "Test user creation skipped (run manually if needed)"
+# Setup LDAP federation + mappers (one-shot, idempotent)
+log "Setting up LDAP federation in Keycloak..."
+docker compose exec -T keycloak bash -c '
+    for i in $(seq 1 10); do
+        if curl -sf http://localhost:8080/realms/master > /dev/null 2>&1; then
+            break
+        fi
+        echo "Waiting for Keycloak... ($i/10)"
+        sleep 3
+    done
 
-# Sync Keycloak with LDAP
-log "Triggering Keycloak LDAP sync..."
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh config credentials \
-    --server http://localhost:8080 \
-    --realm master \
-    --user "${KEYCLOAK_ADMIN}" \
-    --password "${KEYCLOAK_ADMIN_PASSWORD}" 2>/dev/null || true
+    TOKEN=$(curl -s -X POST http://localhost:8080/realms/master/protocol/openid-connect/token \
+        -d "client_id=admin-cli" -d "username=admin" \
+        -d "password='"${KEYCLOAK_ADMIN_PASSWORD}"'" -d "grant_type=password" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)[\"access_token\"])" 2>/dev/null)
 
-docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh create \
-    user-storage/ldap-samba-ad/sync \
-    -r rentoption \
-    -s action=triggerFullSync 2>/dev/null || warn "LDAP sync trigger failed (run manually if needed)"
+    if [[ -n "$TOKEN" ]]; then
+        EXISTING=$(curl -s http://localhost:8080/admin/realms/'"${AD_REALM}"'/components?type=org.keycloak.storage.UserStorageProvider \
+            -H "Authorization: Bearer $TOKEN")
+        HAS_LDAP=$(echo "$EXISTING" | python3 -c "import sys,json; print(any(c.get(\"providerId\")==\"ldap\" for c in json.load(sys.stdin)))" 2>/dev/null)
 
-# ===========================================
-# Summary
-# ===========================================
-log "==========================================="
-log "Deployment Complete!"
-log "==========================================="
+        if [[ "$HAS_LDAP" != "True" ]]; then
+            echo "LDAP federation not found. Run setup-ldap-federation.sh to configure it."
+        else
+            echo "LDAP federation already configured."
+        fi
+    fi
+' 2>/dev/null || warn "LDAP federation check failed (run setup-ldap-federation.sh manually)"
+
+log ""
+info "==========================================="
+info "Deployment Complete!"
+info "==========================================="
 echo ""
 info "Services:"
-info "  • Keycloak:     https://${KEYCLOAK_HOSTNAME}"
-info "  • Keycloak Admin: https://${KEYCLOAK_HOSTNAME}/admin (admin / ${KEYCLOAK_ADMIN_PASSWORD})"
-info "  • LAM (AD UI):  http://<server-ip>:8081 (internal only)"
-info "  • Samba AD:     LDAPS://samba:636 (internal only)"
-info ""
+info "  Keycloak:     https://${KEYCLOAK_HOSTNAME}"
+info "  Keycloak Admin: https://${KEYCLOAK_HOSTNAME}/admin (admin / ${KEYCLOAK_ADMIN_PASSWORD})"
+info "  LAM (AD UI):  http://<server-ip>:8081 (internal only, requires --profile internal)"
+info "  Samba AD:     ldap://samba:389 (internal only)"
+echo ""
+info "Next Steps:"
+info "  1. If first deploy: Setup LDAP federation"
+info "     docker exec rentoption-keycloak /scripts/setup-ldap-federation.sh"
+info "  2. Create users in Samba AD:"
+info "     docker exec rentoption-samba /scripts/create-user.sh <username> -f <first> -l <last>"
+info "  3. Sync users in Keycloak admin console:"
+info "     rentoption realm -> User Federation -> ldap -> Sync -> Full Sync"
+info "  4. Test SSO login with an AD user"
+echo ""
 info "DNS Records Required:"
 info "  ${KEYCLOAK_HOSTNAME}  A  <this-server-ip>"
-info ""
-info "Next Steps:"
-info "  1. Verify DNS points to this server"
-info "  2. Test Keycloak login with AD users"
-info "  3. Configure Nginx OIDC for protected services"
-info "  4. Set CERTBOT_STAGING=0 for production certificates"
-info "  5. Run: docker compose --profile internal up -d (for LAM)"
 echo ""
 log "To view logs: docker compose logs -f [service]"
 log "To stop: docker compose down"
-log "To backup: ./scripts/backup.sh"
