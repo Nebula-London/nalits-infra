@@ -11,7 +11,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 # Wait for Samba AD to be ready
 log "Waiting for Samba AD LDAPS..."
 for i in {1..30}; do
-    if ldapsearch -x -H ldaps://samba:636 -b "DC=SAMBA,DC=INTERNAL" -s base dn -Z > /dev/null 2>&1; then
+    if ldapsearch -x -H ldaps://samba:636 -b "DC=RENTOPTION,DC=COM" -s base dn -Z > /dev/null 2>&1; then
         log "Samba AD LDAPS is ready!"
         break
     fi
@@ -21,7 +21,7 @@ done
 
 # Generate LAM config from template
 log "Generating LAM configuration..."
-AD_DOMAIN="${AD_DOMAIN:-SAMBA.INTERNAL}"
+AD_DOMAIN="${AD_DOMAIN:-rentoption.com}"
 AD_BASE_DN="DC=${AD_DOMAIN//./,DC=}"
 
 cat > /var/lib/ldap-account-manager/config/lam.conf <<EOF

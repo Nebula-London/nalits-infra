@@ -10,8 +10,8 @@ set -euo pipefail
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak:8080}"
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_ADMIN_PASS="${KC_ADMIN_PASS:-ChangeMe_KeycloakAdmin_2024!}"
-LDAP_PROVIDER_ID="${LDAP_PROVIDER_ID:-DkuRC-MxTNu-ODwjLLVnOw}"
-AD_REALM="${AD_REALM:-rentoption}"
+LDAP_PROVIDER_ID="${LDAP_PROVIDER_ID:-eJ2zucVTQn2l-oOKzMPXpw}"
+KC_REALM="${KC_REALM:-rentoption.com}"
 SAMBA_ADMIN_PASS="${SAMBA_ADMIN_PASS:-ChangeMe_SambaAdmin_2024!}"
 
 FIRST_NAME=""
@@ -29,7 +29,7 @@ usage() {
     echo "Options:"
     echo "  -f, --first-name NAME   First name (default: same as username)"
     echo "  -l, --last-name NAME    Last name (default: User)"
-    echo "  -e, --email EMAIL       Email (default: username@rentoption.local)"
+    echo "  -e, --email EMAIL       Email (default: username@rentoption.com)"
     echo "  -p, --password PASS     Password (default: ChangeMe_2024!)"
     echo "  -h, --help              Show this help"
     exit 1
@@ -57,7 +57,7 @@ done
 # Set defaults
 FIRST_NAME="${FIRST_NAME:-$USERNAME}"
 LAST_NAME="${LAST_NAME:-User}"
-EMAIL="${EMAIL:-${USERNAME}@rentoption.local}"
+EMAIL="${EMAIL:-${USERNAME}@rentoption.com}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
@@ -94,7 +94,7 @@ if [[ -z "$TOKEN" ]]; then
     exit 0
 fi
 
-SYNC_RESULT=$(curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${AD_REALM}/user-storage/${LDAP_PROVIDER_ID}/sync?strategy=FULL" \
+SYNC_RESULT=$(curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KC_REALM}/user-storage/${LDAP_PROVIDER_ID}/sync?action=triggerFullSync" \
     -H "Authorization: Bearer ${TOKEN}" 2>/dev/null)
 
 log "Sync triggered. Waiting for user to appear in Keycloak..."
@@ -102,7 +102,7 @@ log "Sync triggered. Waiting for user to appear in Keycloak..."
 KC_FOUND=0
 for i in $(seq 1 10); do
     sleep 3
-    KC_USER=$(curl -s "${KEYCLOAK_URL}/admin/realms/${AD_REALM}/users?username=${USERNAME}&exact=true" \
+    KC_USER=$(curl -s "${KEYCLOAK_URL}/admin/realms/${KC_REALM}/users?username=${USERNAME}&exact=true" \
         -H "Authorization: Bearer ${TOKEN}" 2>/dev/null)
     KC_USER_COUNT=$(echo "$KC_USER" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else 0)" 2>/dev/null || echo "0")
     if [[ "$KC_USER_COUNT" -gt 0 ]]; then

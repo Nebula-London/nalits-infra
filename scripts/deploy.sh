@@ -169,38 +169,27 @@ if docker compose --profile internal ps lam &>/dev/null; then
 fi
 
 # ===========================================
-# Post-deployment: Setup LDAP Federation
+# Post-deployment: Setup LDAP Federation (automatic)
 # ===========================================
 log "Running post-deployment tasks..."
 
-# Setup LDAP federation + mappers (one-shot, idempotent)
-log "Setting up LDAP federation in Keycloak..."
-docker compose exec -T keycloak bash -c '
-    for i in $(seq 1 10); do
-        if curl -sf http://localhost:8080/realms/master > /dev/null 2>&1; then
-            break
-        fi
-        echo "Waiting for Keycloak... ($i/10)"
-        sleep 3
-    done
-
-    TOKEN=$(curl -s -X POST http://localhost:8080/realms/master/protocol/openid-connect/token \
-        -d "client_id=admin-cli" -d "username=admin" \
-        -d "password='"${KEYCLOAK_ADMIN_PASSWORD}"'" -d "grant_type=password" \
-        | python3 -c "import sys,json; print(json.load(sys.stdin)[\"access_token\"])" 2>/dev/null)
-
-    if [[ -n "$TOKEN" ]]; then
-        EXISTING=$(curl -s http://localhost:8080/admin/realms/'"${AD_REALM}"'/components?type=org.keycloak.storage.UserStorageProvider \
-            -H "Authorization: Bearer $TOKEN")
-        HAS_LDAP=$(echo "$EXISTING" | python3 -c "import sys,json; print(any(c.get(\"providerId\")==\"ldap\" for c in json.load(sys.stdin)))" 2>/dev/null)
-
-        if [[ "$HAS_LDAP" != "True" ]]; then
-            echo "LDAP federation not found. Run setup-ldap-federation.sh to configure it."
-        else
-            echo "LDAP federation already configured."
-        fi
+# Wait for Keycloak to be accepting requests on the host port
+log "Waiting for Keycloak to be reachable on port 8080..."
+for i in $(seq 1 20); do
+    if curl -sf http://localhost:8080/realms/master > /dev/null 2>&1; then
+        break
     fi
-' 2>/dev/null || warn "LDAP federation check failed (run setup-ldap-federation.sh manually)"
+    info "Waiting for Keycloak... (${i}/20)"
+    sleep 5
+done
+
+# Idempotent: creates LDAP federation + attribute mappers, then triggers Full Sync.
+log "Setting up LDAP federation in Keycloak..."
+if bash "${PROJECT_DIR}/keycloak/setup-ldap-federation.sh"; then
+    log "LDAP federation setup complete."
+else
+    warn "LDAP federation setup failed. Run manually: ./keycloak/setup-ldap-federation.sh"
+fi
 
 log ""
 info "==========================================="
@@ -214,13 +203,11 @@ info "  LAM (AD UI):  http://<server-ip>:8081 (internal only, requires --profile
 info "  Samba AD:     ldap://samba:389 (internal only)"
 echo ""
 info "Next Steps:"
-info "  1. If first deploy: Setup LDAP federation"
-info "     docker exec rentoption-keycloak /scripts/setup-ldap-federation.sh"
-info "  2. Create users in Samba AD:"
+info "  1. Create users in Samba AD (they auto-sync via LDAP full sync above):"
 info "     docker exec rentoption-samba /scripts/create-user.sh <username> -f <first> -l <last>"
-info "  3. Sync users in Keycloak admin console:"
-info "     rentoption realm -> User Federation -> ldap -> Sync -> Full Sync"
-info "  4. Test SSO login with an AD user"
+info "  2. Test SSO login in Keycloak with an AD user"
+info "  3. [Optional] Add AD group -> Keycloak group sync (manual, may break KC26 user sync):"
+info "     ./keycloak/scripts/mapper-group.sh"
 echo ""
 info "DNS Records Required:"
 info "  ${KEYCLOAK_HOSTNAME}  A  <this-server-ip>"

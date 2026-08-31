@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-AD_DOMAIN="${AD_DOMAIN:-rentoption.local}"
+AD_DOMAIN="${AD_DOMAIN:-rentoption.com}"
 SAMBA_ADMIN_PASS="${SAMBA_ADMIN_PASS:-ChangeMe_SambaAdmin_2024!}"
 
 # Check 1: Samba process running

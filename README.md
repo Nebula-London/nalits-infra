@@ -17,7 +17,7 @@ Internet (port 80/443)
 +-------------+    +-------------+
 |  Keycloak   |<---|  Samba AD   |
 |  (8080)     |LDAP|  (DC)       |
-|             |    | rentoption.local
+|             |    | rentoption.com
 +-------------+    +-------------+
                            |
                     +------|------+
@@ -84,31 +84,39 @@ docker compose run --rm certbot certonly \
 docker compose restart nginx
 ```
 
-**Step 2: Setup LDAP federation in Keycloak**
-
-The realm (`rentoption`) is auto-imported from `keycloak/realm-export.json` on first boot. However, the LDAP user federation cannot be imported via realm import in KC26 — it must be configured separately:
-
+**Step 1: Obtain SSL certificate (if not done by deploy.sh)**
 ```bash
-./samba/scripts/setup-ldap-federation.sh
+docker compose run --rm certbot certonly \
+  --webroot --webroot-path=/var/www/certbot \
+  --email admin@rentoption.com --agree-tos --no-eff-email \
+  -d sso.rentoption.com
+docker compose restart nginx
 ```
 
-This creates:
+**Step 2: Setup LDAP federation in Keycloak (automatic via deploy.sh)**
+
+The realm (`rentoption.com`) is auto-imported from `keycloak/realm-export.json` on first boot. However, the LDAP user federation **cannot** be imported via realm import in KC26 — it must be configured separately.
+
+`./scripts/deploy.sh` does this automatically. If you used `docker compose up` directly, run it once:
+```bash
+./keycloak/setup-ldap-federation.sh
+```
+
+This script (idempotent — safe to re-run) creates:
 - LDAP federation pointing to `ldap://samba:389`
-- Bind DN: `CN=Administrator,CN=Users,DC=RENTOPTION,DC=LOCAL`
+- Bind DN: `CN=Administrator,CN=Users,DC=RENTOPTION,DC=COM`
 - Attribute mappers: username (sAMAccountName), email, firstName, lastName, creationDate, modifyDate
-- Group mapper: group-ldap-mapper (READ_ONLY, syncs AD groups to Keycloak)
+- Then triggers a **Full Sync** automatically (no manual sync needed)
 
-**Step 3: Sync users and groups from Samba AD to Keycloak**
+> **Note:** The group-ldap-mapper is intentionally NOT created here — it breaks KC26 user sync. See the [Adding AD Group sync](#adding-ad-group--keycloak-group-sync-manual) section below to add it manually.
 
-In Keycloak admin console (`https://sso.rentoption.com/admin`):
-- Switch to `rentoption` realm (top-left dropdown)
-- User Federation -> ldap -> Sync -> **Full Sync** (users)
-- User Federation -> ldap -> **Sync group registrations** (groups)
-
-**Step 4: Create users in Samba AD**
+**Step 3: Create users in Samba AD**
 ```bash
 docker exec rentoption-samba /scripts/create-user.sh <username> -f <first> -l <last>
 ```
+
+New Samba AD users appear in Keycloak automatically after a sync. To sync immediately, either let `setup-ldap-federation.sh` run its full sync, or trigger manually:
+- Keycloak admin console -> `rentoption` realm -> User Federation -> ldap -> Sync -> **Full Sync**
 
 ### 5. Access Services
 
@@ -135,14 +143,16 @@ infra-nalits/
 |-- keycloak/
 |   |-- Containerfile           # Keycloak image + Oracle JDBC drivers
 |   |-- realm-export.json       # Pre-configured realm (KC26-compatible)
+|   |-- setup-ldap-federation.sh  # One-shot LDAP federation setup (host-run, auto-sync)
 |   |-- providers/              # Custom SPI providers
 |   |-- themes/                 # Custom themes
+|   |-- scripts/
+|       |-- mapper-group.sh     # [Manual] add AD group -> Keycloak group sync
 |-- samba/
 |   |-- Dockerfile
 |   |-- scripts/
 |       |-- init-ad.sh          # Domain provisioning (provision -> background -> wait -> config -> foreground)
 |       |-- create-user.sh      # Create user in AD + sync to Keycloak
-|       |-- setup-ldap-federation.sh  # Setup LDAP federation in Keycloak
 |       |-- healthcheck.sh      # Health check
 |-- lam/
 |   |-- Dockerfile
@@ -161,10 +171,10 @@ infra-nalits/
 
 | Setting | Value |
 |---------|-------|
-| Realm | `rentoption` |
+| Realm | `rentoption.com` |
 | LDAP Server | `ldap://samba:389` |
-| Bind DN | `CN=Administrator,CN=Users,DC=RENTOPTION,DC=LOCAL` |
-| User Base DN | `CN=Users,DC=RENTOPTION,DC=LOCAL` |
+| Bind DN | `CN=Administrator,CN=Users,DC=RENTOPTION,DC=COM` |
+| User Base DN | `CN=Users,DC=RENTOPTION,DC=COM` |
 | Username Attribute | `sAMAccountName` |
 | Edit Mode | `WRITABLE` |
 | Sync Registrations | `false` (AD is source of truth) |
@@ -180,19 +190,33 @@ infra-nalits/
 | last name | user-attribute-ldap-mapper | sn | lastName | No |
 | creation date | user-attribute-ldap-mapper | createTimestamp | createTimestamp | Yes |
 | modify date | user-attribute-ldap-mapper | modifyTimestamp | modifyTimestamp | Yes |
-| **groups** | **group-ldap-mapper** | **cn, member** | **Keycloak groups** | **Yes** |
+| **groups** * | **group-ldap-mapper** | **cn, member** | **Keycloak groups** | **Yes** |
+
+\* **Manual, opt-in.** Not created by `setup-ldap-federation.sh` because it breaks KC26 user sync. See [Adding AD Group -> Keycloak Group sync](#adding-ad-group--keycloak-group-sync-manual).
 
 ### Sync Direction
 
 **Samba AD is the source of truth.** Users are created in Samba AD (via `samba-tool` or `create-user.sh`) and synced to Keycloak. Keycloak does not write users back to AD (syncRegistrations=false).
 
-### Group Sync
+### Adding AD Group -> Keycloak Group sync (Manual)
 
-The `group-ldap-mapper` syncs AD groups into Keycloak. After the LDAP federation is created (via `setup-ldap-federation.sh` or manually), trigger a group sync:
+The `group-ldap-mapper` maps AD groups to Keycloak groups, but it is **excluded from the automatic setup** because it causes KC26 user-sync failures:
+- `GroupsMultipleParents` error on full sync
+- NPE in `GroupLDAPStorageMapperFactory.onCreate`
+
+Run this **after** user sync is already working, and only if you accept the tradeoff or have upgraded to Keycloak 27+.
+
+```bash
+./keycloak/scripts/mapper-group.sh
+```
+
+The script is idempotent and creates the mapper (README_ONLY) pointing at `CN=Users,DC=RENTOPTION,DC=COM`.
+
+After creating it, trigger a group sync:
 
 **Via Keycloak Admin Console:**
-1. Go to `User Federation` -> `ldap`
-2. Under **Sync group registrations**, click `Sync group registrations`
+1. `User Federation` -> `ldap`
+2. `Sync group registrations` -> `Sync group registrations`
 
 **Via API:**
 ```bash
@@ -200,8 +224,14 @@ TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-con
   -d "client_id=admin-cli" -d "username=admin" -d "password=<ADMIN_PASS>" \
   -d "grant_type=password" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# Find the group-ldap-mapper ID
-MAPPER_ID=$(curl -s "http://localhost:8080/admin/realms/rentoption/components?parent=<LDAP_FEDERATION_ID>&type=org.keycloak.storage.ldap.mappers.LDAPStorageMapper" \
+LDAP_ID=$(curl -s "http://localhost:8080/admin/realms/rentoption.com/components?type=org.keycloak.storage.UserStorageProvider" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys,json
+for c in json.load(sys.stdin):
+    if c.get('providerId') == 'ldap': print(c['id']); break
+")
+
+MAPPER_ID=$(curl -s "http://localhost:8080/admin/realms/rentoption.com/components?parent=$LDAP_ID&type=org.keycloak.storage.ldap.mappers.LDAPStorageMapper" \
   -H "Authorization: Bearer $TOKEN" | python3 -c "
 import sys,json
 for m in json.load(sys.stdin):
@@ -209,8 +239,7 @@ for m in json.load(sys.stdin):
         print(m['id']); break
 ")
 
-# Trigger group sync
-curl -s -X POST "http://localhost:8080/admin/realms/rentoption/user-storage/<LDAP_FEDERATION_ID>/sync?strategy=FULL&mapperId=$MAPPER_ID" \
+curl -s -X POST "http://localhost:8080/admin/realms/rentoption.com/user-storage/$LDAP_ID/sync?strategy=FULL&mapperId=$MAPPER_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -223,7 +252,7 @@ curl -s -X POST "http://localhost:8080/admin/realms/rentoption/user-storage/<LDA
 | `HR Users` | HR department users |
 | `Service Accounts` | Non-human accounts |
 
-**Important:** The `Groups DN` in the mapper must be set to `CN=Users,DC=RENTOPTION,DC=LOCAL` (not `DC=rentoption,DC=local`). Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops, resulting in 0 imported groups.
+**Important:** The `Groups DN` in the mapper must be set to `CN=Users,DC=RENTOPTION,DC=COM` (not `DC=rentoption,DC=com`). Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops, resulting in 0 imported groups.
 
 ## Keycloak on OCI Autonomous DB (Oracle)
 
@@ -276,8 +305,8 @@ docker ps --filter name=rentoption-keycloak
 # 2. Admin console responds (expect 302)?
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/
 
-# 3. Realm loaded from Oracle (expect realm: rentoption)?
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/admin/realms/rentoption
+# 3. Realm loaded from Oracle (expect realm: rentoption.com)?
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/admin/realms/rentoption.com
 ```
 
 Expected result: `90` tables, `148` Liquibase changesets executed, `0` failed.
@@ -293,7 +322,7 @@ Expected result: `90` tables, `148` Liquibase changesets executed, `0` failed.
 
 ## Samba AD Domain
 
-- **Domain**: `rentoption.local` (Kerberos realm: `RENTOPTION.LOCAL`)
+- **Domain**: `rentoption.com` (Kerberos realm: `RENTOPTION.COM`)
 - **NetBIOS**: `RENTOPTION`
 - **DC Name**: `DC1`
 - **DNS**: Internal, forwards to `8.8.8.8`
@@ -308,7 +337,7 @@ docker exec rentoption-samba /scripts/create-user.sh john
 # With options
 docker exec rentoption-samba /scripts/create-user.sh jane \
   --first-name=Jane --last-name=Doe \
-  --email=jane@rentoption.local \
+  --email=jane@rentoption.com \
   --password=MyPass123!
 ```
 
@@ -405,11 +434,18 @@ docker compose exec samba /scripts/init-ad.sh
 ```bash
 # Test LDAP connectivity from Keycloak container
 docker compose exec keycloak bash -c \
-  'ldapsearch -x -H ldap://samba:389 -D "CN=Administrator,CN=Users,DC=RENTOPTION,DC=LOCAL" -w "CHANGE_ME" -b "CN=Users,DC=RENTOPTION,DC=LOCAL" "(objectClass=user)" sAMAccountName'
+  'ldapsearch -x -H ldap://samba:389 -D "CN=Administrator,CN=Users,DC=RENTOPTION,DC=COM" -w "CHANGE_ME" -b "CN=Users,DC=RENTOPTION,DC=COM" "(objectClass=user)" sAMAccountName'
 ```
 
+### No LDAP federation after DB migration / fresh VM
+The LDAP user federation component lives in the Keycloak **database**, not in `realm-export.json`, so it does **not** survive a DB migration, restore, or fresh deploy. After any DB change, re-run the setup (idempotent):
+```bash
+./keycloak/setup-ldap-federation.sh
+```
+This recreates the federation + attribute mappers and triggers a Full Sync.
+
 ### Group sync imports 0 groups
-The `Groups DN` in the group-ldap-mapper must be `CN=Users,DC=RENTOPTION,DC=LOCAL`, not `DC=rentoption,DC=local`. Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops. Edit the mapper in `User Federation -> ldap -> groups` and fix the `Groups DN` field, then re-sync.
+The `Groups DN` in the group-ldap-mapper must be `CN=Users,DC=RENTOPTION,DC=COM`, not `DC=rentoption,DC=com`. Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops. Edit the mapper in `User Federation -> ldap -> groups` and fix the `Groups DN` field, then re-sync.
 
 ### Certificate issues
 ```bash

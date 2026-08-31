@@ -39,7 +39,7 @@ services:
     build:
       context: ./keycloak
       dockerfile: Containerfile
-    command: start --optimized
+    command: start --optimized --import-realm
     container_name: rentoption-keycloak
     environment:
     - KC_DB=${KC_DB:-oracle}
@@ -101,8 +101,8 @@ services:
     - LAM_LDAP_HOST=samba
     - LAM_LDAP_PORT=636
     - LAM_LDAP_PROTOCOL=ldaps
-    - LAM_LDAP_BASE_DN=DC=RENTOPTION,DC=LOCAL
-    - LAM_LDAP_BIND_DN=CN=Administrator,CN=Users,DC=RENTOPTION,DC=LOCAL
+    - LAM_LDAP_BASE_DN=DC=RENTOPTION,DC=COM
+    - LAM_LDAP_BIND_DN=CN=Administrator,CN=Users,DC=RENTOPTION,DC=COM
     - LAM_LDAP_BIND_PASS=${SAMBA_ADMIN_PASSWORD}
     - LAM_LDAP_TLS_VERIFY=false
     healthcheck:

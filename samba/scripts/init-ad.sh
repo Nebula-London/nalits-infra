@@ -15,8 +15,8 @@ log() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] $*${NC}"; }
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $*${NC}"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*${NC}"; }
 
-AD_DOMAIN="${AD_DOMAIN:-rentoption.local}"
-AD_REALM="${AD_REALM:-RENTOPTION.LOCAL}"
+AD_DOMAIN="${AD_DOMAIN:-rentoption.com}"
+AD_REALM="${AD_REALM:-RENTOPTION.COM}"
 AD_NETBIOS="${AD_NETBIOS:-RENTOPTION}"
 SAMBA_ADMIN_PASS="${SAMBA_ADMIN_PASS:-ChangeMe_SambaAdmin_2024!}"
 SAMBA_DNS_FORWARDER="${SAMBA_DNS_FORWARDER:-8.8.8.8}"

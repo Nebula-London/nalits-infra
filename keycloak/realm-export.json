@@ -1,5 +1,5 @@
 {
-  "realm": "rentoption",
+  "realm": "rentoption.com",
   "enabled": true,
   "displayName": "RentOption Identity Provider",
   "displayNameHtml": "<div class=\"kc-logo-text\"><span>RentOption</span></div>",
@@ -160,7 +160,7 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "https://sso.rentoption.com/realms/rentoption/account/*"
+        "https://sso.rentoption.com/realms/rentoption.com/account/*"
       ],
       "webOrigins": [
         "https://sso.rentoption.com"
@@ -380,19 +380,19 @@
         "name": "admin",
         "description": "Administrator role",
         "composite": true,
-        "containerId": "rentoption"
+        "containerId": "rentoption.com"
       },
       {
         "name": "hr",
         "description": "HR department role",
         "composite": false,
-        "containerId": "rentoption"
+        "containerId": "rentoption.com"
       },
       {
         "name": "user",
         "description": "Standard user role",
         "composite": false,
-        "containerId": "rentoption"
+        "containerId": "rentoption.com"
       }
     ],
     "client": {}
@@ -430,7 +430,7 @@
       ],
       "realmRoles": [
         "admin",
-        "default-roles-rentoption"
+        "default-roles-rentoption.com"
       ],
       "clientRoles": {
         "admin-cli": [

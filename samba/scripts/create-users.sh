@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-AD_REALM="${AD_REALM:-SAMBA.INTERNAL}"
-AD_DOMAIN="${AD_DOMAIN:-SAMBA.INTERNAL}"
+AD_REALM="${AD_REALM:-RENTOPTION.COM}"
+AD_DOMAIN="${AD_DOMAIN:-rentoption.com}"
 SAMBA_ADMIN_PASS="${SAMBA_ADMIN_PASS:-ChangeMe_SambaAdmin_2024!}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
