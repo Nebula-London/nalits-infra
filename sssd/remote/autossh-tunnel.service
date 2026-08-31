@@ -1,0 +1,37 @@
+[Unit]
+Description=SSH tunnel for SSSD AD connectivity via jumpbox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Forward Samba AD ports from localhost through the jumpbox to the main server.
+# The MAIN_SERVER_IP is resolved FROM THE JUMPBOX (the SSH client side of the tunnel).
+#
+#   -L 636:MAIN_SERVER_IP:636  -> LDAPS
+#   -L 389:MAIN_SERVER_IP:389  -> LDAP
+#   -L 88:MAIN_SERVER_IP:88    -> Kerberos
+#
+# Requires SSH key auth (identity /root/.ssh/id_ed25519) from this server to
+# the jumpbox. Non-interactive (BatchMode=yes) so the tunnel starts on boot.
+#
+# Usage: This file is generated/bypassed by sssd/remote/setup-remote.sh which
+# fills in JUMPBOX_USER, JUMPBOX_HOST and MAIN_SERVER_IP.
+ExecStart=/usr/bin/autossh -M 0 -N \
+    -o "StrictHostKeyChecking=no" \
+    -o "UserKnownHostsFile=/dev/null" \
+    -o "BatchMode=yes" \
+    -o "ServerAliveInterval 15" \
+    -o "ServerAliveCountMax 3" \
+    -o "ExitOnForwardFailure yes" \
+    -i /root/.ssh/id_ed25519 \
+    -L 636:MAIN_SERVER_IP:636 \
+    -L 389:MAIN_SERVER_IP:389 \
+    -L 88:MAIN_SERVER_IP:88 \
+    JUMPBOX_USER@JUMPBOX_HOST
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+#%PAM-1.0
+# Common authentication PAM config for SSSD
+auth    [success=2 default=ignore]      pam_unix.so nullok try_first_pass
+auth    [success=1 default=ignore]      pam_sss.so use_first_pass
+auth    requisite                       pam_deny.so
+auth    required                        pam_permit.so

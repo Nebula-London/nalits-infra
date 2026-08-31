@@ -1,0 +1,9 @@
+#%PAM-1.0
+auth       required     pam_env.so
+@include common-auth
+account    required     pam_nologin.so
+@include common-account
+session    required     pam_loginuid.so
+session    required     pam_motd.so readmotd
+session    required     pam_mkhomedir.so skel=/etc/skel umask=0077
+@include common-session

@@ -300,6 +300,67 @@ docker volume rm rentoption-samba-data rentoption-samba-etc
 docker compose up -d samba
 ```
 
+## SSSD Client Deployment
+
+Servers authenticate their SSH users against Samba AD via SSSD. Two connection patterns are supported and tested.
+
+### Architecture
+
+```
+Main server (145.241.221.212) - Samba AD (389/636/88 + SSH)
+      ↑
+  JUMPBOX connects directly over the internet (has a public IP)
+      ↑
+  REMOTE connects via an SSH tunnel through the jumpbox (private IP, no internet)
+```
+
+- **Jumpbox** (public IP): talks to Samba AD directly over the internet.
+- **Remote server** (private IP, no internet): can't reach Samba directly, so it tunnels `389/636/88` from `localhost` through an SSH connection to the jumpbox, which forwards to the main server. **No inbound ports are needed on the jumpbox or remote** — the tunnel is initiated outbound from the remote.
+
+### Prerequisites
+
+- Main server firewall allows ports `389`, `636`, `88` from the jumpbox's public IP.
+- Jumpbox SSH (port 22) is reachable from the remote server's IP.
+- Remote server can make outbound SSH connections to the jumpbox (no inbound ports required on the remote).
+
+### Deploy on the Jumpbox (direct connection)
+
+```bash
+cd sssd/jumpbox
+MAIN_SERVER_IP=145.241.221.212 SAMBA_ADMIN_PASSWORD=ChangeMe_SambaAdmin_2024! ./setup-jumpbox.sh
+```
+
+This installs SSSD natively, writes `/etc/sssd/sssd.conf` (LDAPS to the main server), configures nsswitch/PAM/sshd/sudoers, and starts SSSD.
+
+### Deploy on a Remote Server (via SSH tunnel)
+
+```bash
+cd sssd/remote
+JUMPBOX_HOST=<jumpbox-ip> JUMPBOX_USER=<user> \
+MAIN_SERVER_IP=145.241.221.212 \
+SAMBA_ADMIN_PASSWORD=ChangeMe_SambaAdmin_2024! ./setup-remote.sh
+```
+
+The script:
+1. Installs SSSD + autossh.
+2. Sets up SSH key auth from the remote to the jumpbox (run it once to generate/print the key, add it to the jumpbox's `authorized_keys`, then re-run).
+3. Creates the `autossh-tunnel.service` systemd unit that forwards `389/636/88` from `localhost` through the jumpbox to the main server.
+4. Configures SSSD to point at `ldaps://127.0.0.1:636` and `krb5_server = 127.0.0.1:88` (the tunnel endpoints).
+5. Configures nsswitch/PAM/sshd/sudoers and starts SSSD.
+
+Reusable reference configs live in `sssd/remote/` (`sssd.conf`, `krb5.conf`, `autossh-tunnel.service`).
+
+### Verify
+
+```bash
+id testuser                               # resolves AD user + groups
+getent passwd testuser                    # passwd entry
+getent group root-sssd                    # sudo group
+ssh testuser@<server>                     # SSH login with AD password
+```
+
+The remote must have the tunnel running for SSSD to work. Check: `systemctl status autossh-tunnel`, `ss -tlnp | grep -E ':(389|636|88)'`. If the tunnel drops, SSSD goes offline; restore the tunnel and `sss_cache -E`.
+
 ## Troubleshooting
 
 ### Keycloak admin console shows http:// URLs
@@ -334,6 +395,9 @@ docker compose exec keycloak bash -c \
 
 ### Group sync imports 0 groups
 The `Groups DN` in the group-ldap-mapper must be `CN=Users,DC=RENTOPTION,DC=LOCAL`, not `DC=rentoption,DC=local`. Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops. Edit the mapper in `User Federation -> ldap -> groups` and fix the `Groups DN` field, then re-sync.
+
+### SSSD not resolving AD users
+If `id testuser` returns "no such user" but LDAP searches work (e.g. `ldapsearch` returns the user), the issue is likely the ID mapping filter. SSSD with `rfc2307bis` schema generates a search filter that requires `uidNumber`, which Samba AD users don't have by default. The fix: in `/etc/sssd/sssd.conf`, set `ldap_schema = ad` and `ldap_id_mapping = True`. This switches to SID-based ID mapping and drops the uidNumber requirement. After changing, clear the cache: `sss_cache -E && systemctl restart sssd`. Both `sssd/jumpbox/sssd.conf` and `sssd/config/sssd.conf` already include this fix.
 
 ### Certificate issues
 ```bash

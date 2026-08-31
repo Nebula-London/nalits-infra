@@ -1,0 +1,4 @@
+#%PAM-1.0
+# Common session PAM config for SSSD
+session required                        pam_mkhomedir.so skel=/etc/skel umask=0077
+session required                        pam_permit.so

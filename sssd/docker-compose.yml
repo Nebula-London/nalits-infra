@@ -1,0 +1,57 @@
+services:
+  sssd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rentoption-sssd
+    hostname: sssd-client.rentoption.local
+    cap_add:
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+      - CHOWN
+      - FOWNER
+    environment:
+      - AD_DOMAIN=${AD_DOMAIN:-rentoption.local}
+      - AD_REALM=${AD_REALM:-RENTOPTION.LOCAL}
+      - AD_NETBIOS=${AD_NETBIOS:-RENTOPTION}
+      - SAMBA_ADMIN_PASSWORD=${SAMBA_ADMIN_PASSWORD:-ChangeMe_SambaAdmin_2024!}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 60s
+      test:
+        - CMD
+        - bash
+        - -c
+        - "getent passwd Administrator && getent group 'Domain Users'"
+      timeout: 10s
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      backend:
+        aliases:
+          - sssd
+          - sssd.${AD_DOMAIN:-rentoption.local}
+    ports:
+      - "2222:22"
+    restart: unless-stopped
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    volumes:
+      - sssd_data:/var/lib/sss
+      - sssd_logs:/var/log/sssd
+
+networks:
+  backend:
+    external: true
+    name: rentoption-backend
+
+volumes:
+  sssd_data:
+    name: rentoption-sssd-data
+  sssd_logs:
+    name: rentoption-sssd-logs

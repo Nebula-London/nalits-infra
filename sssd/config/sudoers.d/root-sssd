@@ -1,0 +1,2 @@
+# Members of AD group "root-sssd" get full sudo access
+%root-sssd ALL=(ALL:ALL) ALL
