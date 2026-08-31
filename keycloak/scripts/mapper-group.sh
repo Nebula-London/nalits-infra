@@ -25,9 +25,13 @@ PROJECT_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 ENV_FILE="${PROJECT_DIR}/.env"
 if [[ -f "$ENV_FILE" ]]; then
     for VAR in KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD AD_DOMAIN AD_NETBIOS; do
-        VAL="$(grep -E "^${VAR}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
-        if [[ -n "$VAL" ]]; then
-            export "${VAR}=${VAL}"
+        # Only load from .env if not already set in the current environment
+        # (allows CLI overrides like KEYCLOAK_ADMIN_PASSWORD='...' to take precedence).
+        if [[ -z "${!VAR:-}" ]]; then
+            VAL="$(grep -E "^${VAR}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
+            if [[ -n "$VAL" ]]; then
+                export "${VAR}=${VAL}"
+            fi
         fi
     done
 fi
@@ -70,10 +74,13 @@ if [[ -z "$LDAP_ID" ]]; then
 fi
 
 # --- Idempotency: skip if group mapper already exists ---
-EXISTS=$(curl -s "${KEYCLOAK_URL}/admin/realms/${KC_REALM}/components?parent=${LDAP_ID}&type=org.keycloak.storage.ldap.mappers.LDAPStorageMapper" \
+# Note: do NOT rely on the 'parent' query param (unreliable in this KC API);
+# list all realm components and match on providerId + parentId instead.
+EXISTS=$(curl -s "${KEYCLOAK_URL}/admin/realms/${KC_REALM}/components" \
     -H "Authorization: Bearer ${TOKEN}" 2>/dev/null | python3 -c "
 import sys,json
-print(any(c.get('providerId')=='group-ldap-mapper' for c in json.load(sys.stdin)))
+data=json.load(sys.stdin)
+print(any(c.get('providerId')=='group-ldap-mapper' and c.get('parentId')=='${LDAP_ID}' for c in data))
 " 2>/dev/null || echo "False")
 
 if [[ "$EXISTS" == "True" ]]; then
