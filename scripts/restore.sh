@@ -68,7 +68,6 @@ docker compose down -v 2>/dev/null || true
 log "Restoring Docker volumes..."
 
 VOLUMES=(
-    "rentoption-postgres-data"
     "rentoption-keycloak-data"
     "rentoption-samba-data"
     "rentoption-samba-etc"
@@ -136,7 +135,7 @@ log "Waiting for services to start..."
 sleep 30
 
 # Health check
-for service in postgres keycloak samba; do
+for service in keycloak samba; do
     for i in {1..20}; do
         if docker compose ps ${service} | grep -q "healthy"; then
             log "${service} is healthy"

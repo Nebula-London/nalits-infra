@@ -160,7 +160,6 @@ check_service() {
     return 1
 }
 
-check_service postgres
 check_service samba
 check_service keycloak
 

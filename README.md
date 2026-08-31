@@ -33,8 +33,7 @@ Internet (port 80/443)
 |---------|------|---------|--------|
 | **nginx** | 80, 443 | Reverse proxy, SSL termination | Public |
 | **certbot** | - | Let's Encrypt certificates | Internal |
-| **keycloak** | 8080 | Identity Provider (OIDC/SAML) | Via nginx |
-| **postgres** | 5432 | Keycloak database | Internal |
+| **keycloak** | 8080 | Identity Provider (OIDC/SAML), DB = OCI ADB (Oracle) | Via nginx |
 | **samba** | 389, 445, etc. | Active Directory DC | Internal |
 | **lam** | 8081 | LDAP Account Manager UI | Internal only |
 
@@ -57,7 +56,7 @@ vim .env  # Change ALL passwords and domain settings
 **Critical variables:**
 - `SAMBA_ADMIN_PASSWORD` - Domain Admin password
 - `KEYCLOAK_ADMIN_PASSWORD` - Keycloak admin password
-- `KC_DB_PASSWORD` / `POSTGRES_PASSWORD` - Database passwords
+- `KC_DB_URL` / `KC_DB_PASSWORD` - OCI Autonomous DB (Oracle) connection
 - `CERTBOT_EMAIL` - Let's Encrypt registration email
 
 ### 3. Deploy
@@ -134,6 +133,7 @@ infra-nalits/
 |       |-- www/                # ACME challenge webroot
 |       |-- conf/               # Let's Encrypt certificates
 |-- keycloak/
+|   |-- Containerfile           # Keycloak image + Oracle JDBC drivers
 |   |-- realm-export.json       # Pre-configured realm (KC26-compatible)
 |   |-- providers/              # Custom SPI providers
 |   |-- themes/                 # Custom themes
@@ -224,6 +224,72 @@ curl -s -X POST "http://localhost:8080/admin/realms/rentoption/user-storage/<LDA
 | `Service Accounts` | Non-human accounts |
 
 **Important:** The `Groups DN` in the mapper must be set to `CN=Users,DC=RENTOPTION,DC=LOCAL` (not `DC=rentoption,DC=local`). Using the domain root DN triggers Samba AD referral responses that Keycloak silently drops, resulting in 0 imported groups.
+
+## Keycloak on OCI Autonomous DB (Oracle)
+
+Keycloak uses an **OCI Autonomous Database (Oracle)** as its database. No local
+PostgreSQL is used. The `keycloak` service builds the custom Oracle image and holds
+port `8080` behind nginx.
+
+### Connection (TLS-only, no wallet)
+
+OCI ADB is used with **TLS only** (mTLS disabled), so **no wallet** is needed.
+
+```bash
+KC_DB=oracle
+KC_DB_URL=jdbc:oracle:thin:@(description=(retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1521)(host=adb.<region>.oraclecloud.com))(connect_data=(service_name=<DBNAME>_tp.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+KC_DB_USERNAME=keycloak
+KC_DB_PASSWORD=<oracle-db-password>
+KC_DB_TLS_MODE=verify-server
+```
+
+> **IMPORTANT:** The service name must use the **`_tp`** tier. The `_medium` / `_high`
+> tiers have **parallel DML enabled**, which breaks the Liquibase schema migration with
+> `ORA-12838: cannot read/modify an object after modifying it in parallel`.
+> `_tp` disables parallelism and migrates cleanly.
+
+### Custom Keycloak image
+
+`keycloak/Containerfile` builds a Keycloak `26.6` image that adds the Oracle JDBC
+drivers and sets the Oracle DB type:
+
+- `ojdbc17` + `orai18n` JARs are downloaded from Maven Central **at build time**
+  (requires outbound internet to `repo1.maven.org`).
+- `ENV KC_DB=oracle`, plus `KC_FEATURES=token-exchange`, `KC_HEALTH_ENABLED=true`,
+  `KC_METRICS_ENABLED=true`.
+
+### Deploy / test
+
+```bash
+docker compose build keycloak
+docker compose up -d keycloak
+```
+
+Admin console: `https://sso.rentoption.com/admin`
+
+### Verify it works
+
+```bash
+# 1. Container stable and healthy?
+docker ps --filter name=rentoption-keycloak
+
+# 2. Admin console responds (expect 302)?
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/
+
+# 3. Realm loaded from Oracle (expect realm: rentoption)?
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/admin/realms/rentoption
+```
+
+Expected result: `90` tables, `148` Liquibase changesets executed, `0` failed.
+
+### Fresh-clone prerequisites
+
+- Build-time internet (JDBC JAR download from Maven Central).
+- ADB `keycloak` user grants:
+  CREATE SESSION/TABLE/SEQUENCE/VIEW/PROCEDURE/TRIGGER/TYPE, UNLIMITED TABLESPACE,
+  SELECT_CATALOG_ROLE.
+- Keep the `_tp` service suffix.
+- Realm auto-imports from `keycloak/realm-export.json` on first boot.
 
 ## Samba AD Domain
 
@@ -316,8 +382,18 @@ The role-ldap-mapper or syncRegistrations=true is causing issues. Ensure:
 ### Keycloak won't start
 ```bash
 docker compose logs keycloak
-docker compose exec postgres pg_isready -U keycloak
 ```
+
+### Keycloak-on-Oracle startup fails with ORA-12838
+`ORA-12838: cannot read/modify an object after modifying it in parallel` — the ADB
+service tier has parallel DML enabled. Change the service name in `KC_DB_URL`
+from `_medium`/`_high` to `_tp` (e.g. `<DBNAME>_tp.adb.oraclecloud.com`), then clean
+the ADB schema and restart.
+
+### Keycloak-on-Oracle migration fails with ORA-00955
+`ORA-00955: name is already used by an existing object` — a partial/leftover schema
+exists from a failed run. Drop the ADB schema objects (or the data volume) and
+restart.
 
 ### Samba AD not provisioning
 ```bash

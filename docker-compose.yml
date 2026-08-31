@@ -36,16 +36,17 @@ services:
     - nginx_certbot_conf:/etc/letsencrypt
 
   keycloak:
-    command: start
+    build:
+      context: ./keycloak
+      dockerfile: Containerfile
+    command: start --optimized
     container_name: rentoption-keycloak
-    depends_on:
-    - postgres
     environment:
-    - KC_DB=postgres
-    - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
-    - KC_DB_USERNAME=keycloak
+    - KC_DB=${KC_DB:-oracle}
+    - KC_DB_URL=${KC_DB_URL}
+    - KC_DB_USERNAME=${KC_DB_USERNAME}
     - KC_DB_PASSWORD=${KC_DB_PASSWORD}
-    - KC_DB_SCHEMA=public
+    - KC_DB_TLS_MODE=${KC_DB_TLS_MODE:-verify-server}
     - KC_HOSTNAME=${KC_HOSTNAME}
     - KC_HOSTNAME_STRICT=${KC_HOSTNAME_STRICT}
     - KC_HOSTNAME_STRICT_HTTPS=${KC_HOSTNAME_STRICT_HTTPS}
@@ -70,7 +71,6 @@ services:
       - CMD-SHELL
       - bash -c 'cat < /dev/tcp/localhost/8080 </dev/null'
       timeout: 10s
-    image: quay.io/keycloak/keycloak:26.0
     logging:
       driver: json-file
       options:
@@ -164,40 +164,6 @@ services:
     - ./nginx/conf.d:/etc/nginx/conf.d:ro
     - nginx_certbot:/var/www/certbot:ro
     - nginx_certbot_conf:/etc/letsencrypt:ro
-  postgres:
-    command: 'postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS} -c shared_buffers=256MB
-      -c effective_cache_size=768MB -c maintenance_work_mem=64MB -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB -c default_statistics_target=100 -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-
-      '
-    container_name: rentoption-postgres
-    environment:
-    - POSTGRES_DB=${POSTGRES_DB}
-    - POSTGRES_USER=${POSTGRES_USER}
-    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    - POSTGRES_MAX_CONNECTIONS=${POSTGRES_MAX_CONNECTIONS:-100}
-    healthcheck:
-      interval: 10s
-      retries: 5
-      start_period: 30s
-      test:
-      - CMD-SHELL
-      - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
-      timeout: 5s
-    image: postgres:16-alpine
-    logging:
-      driver: json-file
-      options:
-        max-file: '3'
-        max-size: 10m
-    networks:
-    - backend
-    ports:
-    - 5432:5432
-    restart: unless-stopped
-    volumes:
-    - postgres_data:/var/lib/postgresql/data
   samba:
     build:
       context: ./samba
@@ -270,8 +236,6 @@ volumes:
     name: rentoption-keycloak-data
   lam_config:
     name: rentoption-lam-config
-  postgres_data:
-    name: rentoption-postgres-data
   samba_data:
     name: rentoption-samba-data
   samba_etc:

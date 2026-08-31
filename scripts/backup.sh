@@ -43,7 +43,6 @@ mkdir -p "${BACKUP_PATH}"
 log "Backing up Docker volumes..."
 
 VOLUMES=(
-    "rentoption-postgres-data"
     "rentoption-keycloak-data"
     "rentoption-samba-data"
     "rentoption-samba-etc"
@@ -77,7 +76,6 @@ tar czf "${BACKUP_PATH}/config.tar.gz" \
     keycloak/ \
     samba/ \
     lam/ \
-    postgres/ \
     certbot/ \
     scripts/ \
     2>/dev/null || warn "Failed to backup config files"
