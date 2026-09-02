@@ -126,6 +126,10 @@ New Samba AD users appear in Keycloak automatically after a sync. To sync immedi
 | Keycloak User Login | https://sso.rentoption.com | AD users (synced from Samba) |
 | LAM (AD UI) | http://<server-ip>:8081 | admin / `LAM_PASSWORD` |
 
+### 6. Realm & User Configuration (Keycloak UI)
+
+For step-by-step Admin Console instructions to configure the realm's Client Scopes, Clients, Roles and Default Roles (the fixes that make the self-service account console work), users **must** follow [`keycloak/readme_realm_user_config.md`](keycloak/readme_realm_user_config.md).
+
 ## Directory Structure
 
 ```
