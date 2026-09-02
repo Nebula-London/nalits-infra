@@ -32,6 +32,26 @@ fi
 export $(grep -v '^#' .env | xargs)
 
 # ===========================================
+# Normalize file permissions
+# ===========================================
+# Files bind-mounted into containers must be readable by the container's
+# runtime user (e.g. Keycloak runs as uid 1000). Repo files may arrive with
+# restrictive perms (umask=0007, git clone, etc.) which cause mount-time
+# "Permission denied" errors. Normalize them here so deployment is
+# reproducible across nuke/clone without manual chmod.
+log "Normalizing file permissions for container mounts..."
+find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx/conf.d" \
+     "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam/config" \
+     -type d -exec chmod 755 {} +
+find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx/conf.d" \
+     "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam/config" \
+     -type f -exec chmod 644 {} +
+# Restore executable bits on host-run/entrypoint scripts
+find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx" \
+     "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam" \
+     "${PROJECT_DIR}/scripts" -type f -name '*.sh' -exec chmod +x {} +
+
+# ===========================================
 # Pre-deployment Checks
 # ===========================================
 log "Starting RentOption Infrastructure Deployment"

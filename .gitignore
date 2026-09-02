@@ -1,2 +1,4 @@
 *.env
 basic_prompt.md
+*/*/conf-backup*
+scripts/kc.sh
