@@ -164,6 +164,136 @@ services:
     - ./nginx/conf.d:/etc/nginx/conf.d:ro
     - nginx_certbot:/var/www/certbot:ro
     - nginx_certbot_conf:/etc/letsencrypt:ro
+    - ./certs:/etc/nginx/certs:ro
+  samba-api:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: rentoption-samba-api
+    depends_on:
+      samba:
+        condition: service_healthy
+      samba-redis:
+        condition: service_healthy
+    environment:
+    - LDAP_HOST=${LDAP_HOST:-samba}
+    - LDAP_PORT=${LDAP_PORT:-389}
+    - LDAP_BASE_DN=${LDAP_BASE_DN:-DC=RENTOPTION,DC=COM}
+    - LDAP_BIND_DN=${LDAP_BIND_DN:-CN=Administrator,CN=Users,DC=RENTOPTION,DC=COM}
+    - LDAP_BIND_PASSWORD=${LDAP_BIND_PASSWORD:-}
+    - SAMBA_ADMIN_PASSWORD=${SAMBA_ADMIN_PASSWORD}
+    - KEYCLOAK_URL=${KEYCLOAK_URL:-https://sso.rentoption.com}
+    - KEYCLOAK_REALM=${KEYCLOAK_REALM:-rentoption.com}
+    - KEYCLOAK_CLIENT_ID=${SAMBA_UI_CLIENT_ID:-samba-admin-ui}
+    - KEYCLOAK_CLIENT_SECRET=${SAMBA_UI_CLIENT_SECRET:-}
+    - SAMBA_UI_DB_URL=${SAMBA_UI_DB_URL:-${KC_DB_URL:-}}
+    - SAMBA_UI_DB_USERNAME=${SAMBA_UI_DB_USERNAME:-${KC_DB_USERNAME:-}}
+    - SAMBA_UI_DB_PASSWORD=${SAMBA_UI_DB_PASSWORD:-${KC_DB_PASSWORD:-}}
+    - KC_DB_URL=${KC_DB_URL}
+    - KC_DB_USERNAME=${KC_DB_USERNAME}
+    - KC_DB_PASSWORD=${KC_DB_PASSWORD}
+    - REDIS_URL=redis://samba-redis:6379/0
+    - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    - CORS_ORIGINS=${CORS_ORIGINS:-https://dc.rentoption.com,https://sso.rentoption.com}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8000/health
+      timeout: 10s
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+    - frontend
+    - backend
+    restart: unless-stopped
+
+  samba-ui:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    container_name: rentoption-samba-ui
+    depends_on:
+    - samba-api
+    environment:
+    - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://samba-api:8000}
+    - NEXT_PUBLIC_KEYCLOAK_URL=${KEYCLOAK_URL:-https://sso.rentoption.com}
+    - NEXT_PUBLIC_KEYCLOAK_REALM=${KEYCLOAK_REALM:-rentoption.com}
+    - KEYCLOAK_URL=${KEYCLOAK_URL:-https://sso.rentoption.com}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - wget -qO- http://samba-ui:3000/ || wget -qO- http://127.0.0.1:3000/ || exit 1
+      timeout: 10s
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+    - frontend
+    - backend
+    restart: unless-stopped
+
+  samba-worker:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    container_name: rentoption-samba-worker
+    depends_on:
+      samba-redis:
+        condition: service_healthy
+      samba-api:
+        condition: service_healthy
+    environment:
+    - REDIS_URL=redis://samba-redis:6379/0
+    - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    - LDAP_HOST=${LDAP_HOST:-samba}
+    - LDAP_BASE_DN=${LDAP_BASE_DN:-DC=RENTOPTION,DC=COM}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+    - backend
+    restart: unless-stopped
+
+  samba-redis:
+    image: redis:7-alpine
+    container_name: rentoption-samba-redis
+    command: sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then echo "requirepass $$REDIS_PASSWORD" > /tmp/redis.conf && exec redis-server /tmp/redis.conf; else exec redis-server; fi'
+    environment:
+    - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    healthcheck:
+      interval: 15s
+      retries: 3
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG; else redis-cli ping | grep -q PONG; fi
+      timeout: 5s
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+    - backend
+    restart: unless-stopped
+    volumes:
+    - samba_redis_data:/data
+
   samba:
     build:
       context: ./samba
@@ -240,3 +370,5 @@ volumes:
     name: rentoption-samba-data
   samba_etc:
     name: rentoption-samba-etc
+  samba_redis_data:
+    name: rentoption-samba-redis-data
