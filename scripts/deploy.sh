@@ -29,7 +29,14 @@ if [[ ! -f .env ]]; then
     exit 1
 fi
 
-export $(grep -v '^#' .env | xargs)
+# Load environment - parse safely (handles quoted values, spaces, and glob chars
+# such as BACKUP_SCHEDULE="0 2 * * *"; the naive `export $(grep ... | xargs)`
+# word-splits the schedule and lets '2' and '*' become invalid identifiers)
+while IFS='=' read -r key value; do
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+    export "${key}=${value}"
+done < .env
 
 # ===========================================
 # Normalize file permissions
@@ -42,14 +49,16 @@ export $(grep -v '^#' .env | xargs)
 log "Normalizing file permissions for container mounts..."
 find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx/conf.d" \
      "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam/config" \
-     -type d -exec chmod 755 {} +
+     -type d -exec chmod 755 {} + || true
 find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx/conf.d" \
      "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam/config" \
-     -type f -exec chmod 644 {} +
-# Restore executable bits on host-run/entrypoint scripts
-find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx" \
+     -type f -exec chmod 644 {} + || true
+# Restore executable bits on host-run/entrypoint scripts.
+# Scoped to nginx/conf.d (NOT nginx/) because nginx/certbot/conf/accounts is
+# root-owned (drwx------); find on 'nginx' would abort under set -e.
+find "${PROJECT_DIR}/keycloak" "${PROJECT_DIR}/nginx/conf.d" \
      "${PROJECT_DIR}/samba" "${PROJECT_DIR}/lam" \
-     "${PROJECT_DIR}/scripts" -type f -name '*.sh' -exec chmod +x {} +
+     "${PROJECT_DIR}/scripts" -type f -name '*.sh' -exec chmod +x {} + || true
 
 # ===========================================
 # Pre-deployment Checks
@@ -109,7 +118,7 @@ done
 # ===========================================
 # Initial Certificate Generation
 # ===========================================
-if [[ ! -d "nginx/certbot/conf/live/${KEYCLOAK_HOSTNAME}" ]]; then
+if [[ ! -d "certs/live/${KEYCLOAK_HOSTNAME}" ]]; then
     log "Generating initial SSL certificates..."
 
     # Start nginx temporarily for ACME challenge

@@ -2,5 +2,5 @@
 basic_prompt.md
 */*/conf-backup*
 scripts/kc.sh
-certs/*
+certs/
 prompt.txt
