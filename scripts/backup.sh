@@ -25,7 +25,11 @@ cd "${PROJECT_DIR}"
 
 # Load environment
 if [[ -f .env ]]; then
-    export $(grep -v '^#' .env | xargs)
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+        export "${key}=${value}"
+    done < .env
 fi
 
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
