@@ -257,6 +257,79 @@
       "attributes": {
         "access.token.lifespan": "300"
       }
+    },
+    {
+      "clientId": "samba-admin-ui",
+      "name": "Samba AD Management Portal",
+      "description": "Internal AD UI dc.rentoption.com \u2014 OIDC PKCE",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SAMBA_UI_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://dc.rentoption.com/*",
+        "https://dc.rentoption.com:443/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "https://dc.rentoption.com",
+        "http://localhost:3000"
+      ],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://dc.rentoption.com/*",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "true"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": false,
+      "nodeReRegistrationTimeout": -1,
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "publicClient": false
     }
   ],
   "clientScopes": [
@@ -948,6 +1021,42 @@
             ]
           }
         }
+      },
+      {
+        "name": "samba-super-admin",
+        "description": "Super Admin \u2014 full access",
+        "composite": false,
+        "containerId": "rentoption.com"
+      },
+      {
+        "name": "samba-ad-admin",
+        "description": "AD Admin \u2014 users/groups/ou/dns/gpo",
+        "composite": false,
+        "containerId": "rentoption.com"
+      },
+      {
+        "name": "samba-helpdesk",
+        "description": "Helpdesk \u2014 reset/unlock only",
+        "composite": false,
+        "containerId": "rentoption.com"
+      },
+      {
+        "name": "samba-hr",
+        "description": "HR \u2014 create/edit users",
+        "composite": false,
+        "containerId": "rentoption.com"
+      },
+      {
+        "name": "samba-auditor",
+        "description": "Auditor \u2014 read only + audit",
+        "composite": false,
+        "containerId": "rentoption.com"
+      },
+      {
+        "name": "samba-readonly",
+        "description": "Read Only \u2014 view only",
+        "composite": false,
+        "containerId": "rentoption.com"
       }
     ],
     "client": {
